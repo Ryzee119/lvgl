@@ -130,7 +130,7 @@ lv_result_t lv_thread_sync_init(lv_thread_sync_t * sync)
         LV_LOG_ERROR("Error: %s", SDL_GetError());
         return LV_RESULT_INVALID;
     }
-    sync->cond = SDL_CreateCond();
+    sync->cond = SDL_CreateCondition();
     if(sync->cond == NULL) {
         LV_LOG_ERROR("Error: %s", SDL_GetError());
         return LV_RESULT_INVALID;
@@ -143,7 +143,7 @@ lv_result_t lv_thread_sync_wait(lv_thread_sync_t * sync)
 {
     SDL_LockMutex(sync->mutex);
     while(!sync->v) {
-        SDL_CondWait(sync->cond, sync->mutex);
+        SDL_WaitCondition(sync->cond, sync->mutex);
     }
     sync->v = false;
     SDL_UnlockMutex(sync->mutex);
@@ -154,7 +154,7 @@ lv_result_t lv_thread_sync_signal(lv_thread_sync_t * sync)
 {
     SDL_LockMutex(sync->mutex);
     sync->v = true;
-    SDL_CondSignal(sync->cond);
+    SDL_SignalCondition(sync->cond);
     SDL_UnlockMutex(sync->mutex);
 
     return LV_RESULT_OK;
@@ -163,7 +163,7 @@ lv_result_t lv_thread_sync_signal(lv_thread_sync_t * sync)
 lv_result_t lv_thread_sync_delete(lv_thread_sync_t * sync)
 {
     SDL_DestroyMutex(sync->mutex);
-    SDL_DestroyCond(sync->cond);
+    SDL_DestroyCondition(sync->cond);
     return LV_RESULT_OK;
 }
 

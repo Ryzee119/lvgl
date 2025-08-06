@@ -92,13 +92,16 @@ static lv_timer_t * event_handler_timer;
  *   GLOBAL FUNCTIONS
  **********************/
 
+static inline uint32_t SDL_GetTicks32(void) {
+    return (uint32_t)SDL_GetTicks();
+}
+
 lv_display_t * lv_sdl_window_create(int32_t hor_res, int32_t ver_res)
 {
     if(!inited) {
         SDL_Init(SDL_INIT_VIDEO);
-        SDL_StartTextInput();
         event_handler_timer = lv_timer_create(sdl_event_handler, 5, NULL);
-        lv_tick_set_cb(SDL_GetTicks);
+        lv_tick_set_cb(SDL_GetTicks32);
         lv_delay_set_cb(SDL_Delay);
 
         inited = true;
@@ -116,6 +119,8 @@ lv_display_t * lv_sdl_window_create(int32_t hor_res, int32_t ver_res)
     lv_display_add_event_cb(disp, release_disp_cb, LV_EVENT_DELETE, disp);
     lv_display_set_driver_data(disp, dsc);
     window_create(disp);
+
+    SDL_StartTextInput(dsc->window);
 
     lv_display_set_flush_cb(disp, flush_cb);
 
@@ -196,10 +201,9 @@ void lv_sdl_window_set_title(lv_display_t * disp, const char * title)
 void lv_sdl_window_set_icon(lv_display_t * disp, void * icon, int32_t width, int32_t height)
 {
     lv_sdl_window_t * dsc = lv_display_get_driver_data(disp);
-    SDL_Surface * iconSurface = SDL_CreateRGBSurfaceWithFormatFrom(icon, width, height, 32, width * 4,
-                                                                   SDL_PIXELFORMAT_ARGB8888);
+    SDL_Surface * iconSurface = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_ARGB8888, icon, width * 4);
     SDL_SetWindowIcon(dsc->window, iconSurface);
-    SDL_FreeSurface(iconSurface);
+    SDL_DestroySurface(iconSurface);
 }
 
 void * lv_sdl_window_get_renderer(lv_display_t * disp)
@@ -326,18 +330,15 @@ static void sdl_event_handler(lv_timer_t * t)
 #endif
         lv_sdl_keyboard_handler(&event);
 
-        if(event.type == SDL_WINDOWEVENT) {
+        if(event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST) {
             lv_display_t * disp = lv_sdl_get_disp_from_win_id(event.window.windowID);
             if(disp == NULL) continue;
             lv_sdl_window_t * dsc = lv_display_get_driver_data(disp);
-            switch(event.window.event) {
-#if SDL_VERSION_ATLEAST(2, 0, 5)
-                case SDL_WINDOWEVENT_TAKE_FOCUS:
-#endif
-                case SDL_WINDOWEVENT_EXPOSED:
+            switch(event.type) {
+                case SDL_EVENT_WINDOW_EXPOSED :
                     window_update(disp);
                     break;
-                case SDL_WINDOWEVENT_RESIZED:
+                case SDL_EVENT_WINDOW_RESIZED :
                     dsc->ignore_size_chg = 1;
                     int32_t hres = (int32_t)((float)(event.window.data1) / dsc->zoom);
                     int32_t vres = (int32_t)((float)(event.window.data2) / dsc->zoom);
@@ -345,14 +346,14 @@ static void sdl_event_handler(lv_timer_t * t)
                     dsc->ignore_size_chg = 0;
                     lv_refr_now(disp);
                     break;
-                case SDL_WINDOWEVENT_CLOSE:
+                case SDL_EVENT_WINDOW_CLOSE_REQUESTED :
                     lv_display_delete(disp);
                     break;
                 default:
                     break;
             }
         }
-        if(event.type == SDL_QUIT) {
+        if(event.type == SDL_EVENT_QUIT) {
             SDL_Quit();
             lv_deinit();
             inited = false;
@@ -375,12 +376,9 @@ static void window_create(lv_display_t * disp)
 
     int32_t hor_res = (int32_t)((float)(disp->hor_res) * dsc->zoom);
     int32_t ver_res = (int32_t)((float)(disp->ver_res) * dsc->zoom);
-    dsc->window = SDL_CreateWindow("LVGL Simulator",
-                                   SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                                   hor_res, ver_res, flag);       /*last param. SDL_WINDOW_BORDERLESS to hide borders*/
+    dsc->window = SDL_CreateWindow("LVGL Simulator", hor_res, ver_res, flag);       /*last param. SDL_WINDOW_BORDERLESS to hide borders*/
 
-    dsc->renderer = SDL_CreateRenderer(dsc->window, -1,
-                                       LV_SDL_ACCELERATED ? SDL_RENDERER_ACCELERATED : SDL_RENDERER_SOFTWARE);
+    dsc->renderer = SDL_CreateRenderer(dsc->window, NULL);
 #if LV_USE_DRAW_SDL == 0
     texture_resize(disp);
 
@@ -411,7 +409,7 @@ static void window_update(lv_display_t * disp)
     SDL_RenderClear(dsc->renderer);
 
     /*Update the renderer with the texture containing the rendered image*/
-    SDL_RenderCopy(dsc->renderer, dsc->texture, NULL, NULL);
+    SDL_RenderTexture(dsc->renderer, dsc->texture, NULL, NULL);
 #endif
     SDL_RenderPresent(dsc->renderer);
 }
@@ -446,8 +444,8 @@ static void texture_resize(lv_display_t * disp)
     if(dsc->texture) SDL_DestroyTexture(dsc->texture);
 
 #if LV_COLOR_DEPTH == 32 || LV_COLOR_DEPTH == 1
-    SDL_PixelFormatEnum px_format =
-        SDL_PIXELFORMAT_RGB888; /*same as SDL_PIXELFORMAT_RGB888, but it's not supported in older versions*/
+    SDL_PixelFormat px_format =
+        SDL_PIXELFORMAT_XRGB8888; /*same as SDL_PIXELFORMAT_RGB888, but it's not supported in older versions*/
 #elif LV_COLOR_DEPTH == 24
     SDL_PixelFormatEnum px_format = SDL_PIXELFORMAT_BGR24;
 #elif LV_COLOR_DEPTH == 16

@@ -16,6 +16,7 @@
 #include "../../drivers/sdl/lv_sdl_window.h"
 #include "../../misc/cache/lv_cache_entry_private.h"
 #include "../../misc/lv_area_private.h"
+#include <stdlib.h> // For malloc, realloc, free
 
 /*********************
  *      DEFINES
@@ -156,6 +157,7 @@ static int32_t dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
         int32_t h = lv_area_get_height(&layer->buf_area);
         layer->user_data = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
                                              SDL_TEXTUREACCESS_TARGET, w, h);
+        // FIXME. This texture can be used without intialiation. Garbage data can be drawn.
     }
 
     t->state = LV_DRAW_TASK_STATE_IN_PROGRESS;
@@ -369,13 +371,15 @@ static void blend_texture_layer(lv_draw_task_t * t)
     SDL_SetTextureAlphaMod(src_texture, draw_dsc->opa);
     SDL_SetTextureBlendMode(src_texture, SDL_BLENDMODE_BLEND);
     SDL_SetRenderTarget(renderer, layer_get_texture(t->target_layer));
-    SDL_RenderSetClipRect(renderer, &clip_rect);
+    SDL_SetRenderClipRect(renderer, &clip_rect);
 
-    SDL_Point center = {draw_dsc->pivot.x, draw_dsc->pivot.y};
-    SDL_RenderCopyEx(renderer, src_texture, NULL, &rect, draw_dsc->rotation / 10, &center, SDL_FLIP_NONE);
+    const SDL_FPoint centerf = {(float)draw_dsc->pivot.x, (float)draw_dsc->pivot.y};
+    SDL_FRect dstrect;
+    SDL_RectToFRect(&rect, &dstrect);
+    SDL_RenderTextureRotated(renderer, src_texture, NULL, &dstrect, (double)draw_dsc->rotation / 10.0, &centerf, SDL_FLIP_NONE);
 
     SDL_DestroyTexture(src_texture);
-    SDL_RenderSetClipRect(renderer, NULL);
+    SDL_SetRenderClipRect(renderer, NULL);
 }
 
 static void draw_from_cached_texture(lv_draw_sdl_unit_t * u)
@@ -457,11 +461,13 @@ static void draw_from_cached_texture(lv_draw_sdl_unit_t * u)
     rect.y = t->_real_area.y1 - dest_layer->buf_area.y1;
     rect.w = data_cached->w;
     rect.h = data_cached->h;
+    SDL_FRect rectf;
+    SDL_RectToFRect(&rect, &rectf);
 
-    SDL_RenderSetClipRect(renderer, &clip_rect);
-    SDL_RenderCopy(renderer, texture, NULL, &rect);
+    SDL_SetRenderClipRect(renderer, &clip_rect);
+    SDL_RenderTexture(renderer, texture, NULL, &rectf);
 
-    SDL_RenderSetClipRect(renderer, NULL);
+    SDL_SetRenderClipRect(renderer, NULL);
 
     lv_cache_release(u->texture_cache, entry_cached, u);
 
@@ -495,8 +501,11 @@ static void execute_drawing(lv_draw_sdl_unit_t * u)
             SDL_Renderer * renderer = lv_sdl_window_get_renderer(disp);
             SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(renderer, fill_dsc->color.red, fill_dsc->color.green, fill_dsc->color.blue, fill_dsc->opa);
-            SDL_RenderSetClipRect(renderer, NULL);
-            SDL_RenderFillRect(renderer, &rect);
+            SDL_SetRenderClipRect(renderer, NULL);
+
+            SDL_FRect rectf;
+            SDL_RectToFRect(&rect, &rectf);
+            SDL_RenderFillRect(renderer, &rectf);
             return;
         }
     }
